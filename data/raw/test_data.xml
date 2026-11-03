@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data>
+  <row>
+    <id>1</id>
+    <name>Иван Иванов</name>
+    <email>ivan@mail.ru</email>
+    <age>25</age>
+    <birth_date>1999-01-15</birth_date>
+  </row>
+  <row>
+    <id>2</id>
+    <name>Мария Смирнова</name>
+    <email>maria@mail.ru</email>
+    <age>30</age>
+    <birth_date>1994-05-20</birth_date>
+  </row>
+  <row>
+    <id>3</id>
+    <name>Пётр Васильев</name>
+    <email>petr@yandex.ru</email>
+    <age>28</age>
+    <birth_date>1996-03-10</birth_date>
+  </row>
+  <row>
+    <id>4</id>
+    <name>Елена Попова</name>
+    <email>elena@gmail.com</email>
+    <age>22</age>
+    <birth_date>2002-07-01</birth_date>
+  </row>
+  <row>
+    <id>5</id>
+    <name>Анна Соколова</name>
+    <email>anna@company.ru</email>
+    <age>35</age>
+    <birth_date>1989-11-11</birth_date>
+  </row>
+</data>
