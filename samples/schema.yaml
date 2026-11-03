@@ -1,0 +1,21 @@
+fields:
+  - name: id
+    type: integer
+    required: true
+    unique: true
+  - name: name
+    type: string
+    required: true
+    min_length: 2
+    max_length: 50
+  - name: email
+    type: string
+    required: true
+    pattern: "^[^@]+@[^@]+\\.[^@]+$"
+  - name: age
+    type: integer
+    min: 16
+    max: 100
+  - name: birth_date
+    type: date
+    format: "YYYY-MM-DD"
