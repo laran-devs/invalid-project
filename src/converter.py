@@ -18,7 +18,7 @@ class FileConverter:
                     file.path,
                     sep=None,
                     engine="python",
-                    encoding="utf-8-sig"  # корректно читает UTF-8 с BOM и обычный UTF-8
+                    encoding="utf-8-sig",  # корректно читает UTF-8 с BOM и обычный UTF-8
                 )
 
             case "json":
@@ -29,9 +29,16 @@ class FileConverter:
                 # Читает плоские записи тегов второго уровня
                 return pd.read_xml(file.path)
 
-            case "xlsx" | "xls":
-                # Всегда читает первый активный лист
-                return pd.read_excel(file.path, sheet_name=0)
+            case "xlsx":
+                # Для формата XLSX используем openpyxl
+                return pd.read_excel(file.path, sheet_name=0, engine="openpyxl")
+
+            case "xls":
+                # Для формата Excel 97-2003 (.xls) используем xlrd
+                try:
+                    return pd.read_excel(file.path, sheet_name=0, engine="xlrd")
+                except ImportError:
+                    return pd.read_excel(file.path, sheet_name=0)
 
             case _:
                 raise ValueError(f"Неподдерживаемый формат: {file.format}")
@@ -56,7 +63,7 @@ class FileConverter:
             target_path,
             engine="pyarrow",
             compression="snappy",
-            index=False
+            index=False,
         )
 
         return target_path
