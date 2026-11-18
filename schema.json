@@ -8,16 +8,19 @@
     },
     {
       "name": "name",
+      "target_name": "full_name",
       "type": "string",
       "required": true,
       "min_length": 2,
-      "max_length": 50
+      "max_length": 50,
+      "transform": ["trim", "uppercase"]
     },
     {
       "name": "email",
       "type": "string",
       "required": true,
-      "pattern": "^[^@]+@[^@]+\\.[^@]+$"
+      "pattern": "^[^@]+@[^@]+\\.[^@]+$",
+      "transform": ["trim", "lowercase"]
     },
     {
       "name": "age",
@@ -27,8 +30,10 @@
     },
     {
       "name": "birth_date",
+      "target_name": "dob",
       "type": "date",
-      "format": "YYYY-MM-DD"
+      "format": "YYYY-MM-DD",
+      "transform": "timestamp_to_date"
     }
   ]
 }

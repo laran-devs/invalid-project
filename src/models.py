@@ -3,7 +3,7 @@ from typing import Optional, Union
 
 
 class File:
-    """Инкапсулирует метаданные файла на диске."""
+    """Инкапсулирует метаданные входного файла на диске."""
 
     SUPPORTED_FORMATS = {"csv", "json", "xml", "xlsx", "xls"}
 
@@ -15,7 +15,7 @@ class File:
         raw_format = file_format or self.path.suffix.lstrip(".").lower()
         if raw_format not in self.SUPPORTED_FORMATS:
             raise ValueError(
-                f"Неподдерживаемый формат: '{raw_format}'. "
+                f"Неподдерживаемый входной формат: '{raw_format}'. "
                 f"Допустимые форматы: {', '.join(sorted(self.SUPPORTED_FORMATS))}"
             )
         self.format = raw_format

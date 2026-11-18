@@ -66,15 +66,19 @@ class ParquetValidator:
 
         for fld in fields:
             name = fld.get("name")
+            target_name = fld.get("target_name")
             if not name:
                 continue
 
-            if name not in df.columns:
+            # Поддерживаем поиск колонки как по исходному имени, так и по target_name (после маппинга)
+            col_name = name if name in df.columns else (target_name if target_name and target_name in df.columns else None)
+
+            if col_name is None:
                 if fld.get("required"):
                     errors.append(f"Обязательное поле '{name}' отсутствует в данных")
                 continue
 
-            series = df[name]
+            series = df[col_name]
 
             # 1. Проверка на обязательность (required)
             is_empty = series.isna()
@@ -83,7 +87,7 @@ class ParquetValidator:
 
             if fld.get("required"):
                 for row_idx in series.index[is_empty]:
-                    errors.append(f"Строка {row_idx + 1}: поле '{name}' обязательно для заполнения")
+                    errors.append(f"Строка {row_idx + 1}: поле '{col_name}' обязательно для заполнения")
 
             # Для остальных правил проверяем только непустые значения
             valid = series[~is_empty]
@@ -94,38 +98,38 @@ class ParquetValidator:
             if fld.get("unique"):
                 dups = valid[valid.duplicated(keep="first")]
                 for row_idx, val in dups.items():
-                    errors.append(f"Строка {row_idx + 1}: поле '{name}' содержит дубликат значения '{val}'")
+                    errors.append(f"Строка {row_idx + 1}: поле '{col_name}' содержит дубликат значения '{val}'")
 
             # 3. Проверка типов данных
             expected_type = fld.get("type")
             if expected_type == "integer":
                 for row_idx, val in valid.items():
                     if isinstance(val, bool):
-                        errors.append(f"Строка {row_idx + 1}: поле '{name}' должно быть integer, получено '{val}'")
+                        errors.append(f"Строка {row_idx + 1}: поле '{col_name}' должно быть integer, получено '{val}'")
                     else:
                         try:
                             f_val = float(val)
                             if not f_val.is_integer():
-                                errors.append(f"Строка {row_idx + 1}: поле '{name}' должно быть integer, получено '{val}'")
+                                errors.append(f"Строка {row_idx + 1}: поле '{col_name}' должно быть integer, получено '{val}'")
                         except (ValueError, TypeError):
-                            errors.append(f"Строка {row_idx + 1}: поле '{name}' должно быть integer, получено '{val}'")
+                            errors.append(f"Строка {row_idx + 1}: поле '{col_name}' должно быть integer, получено '{val}'")
 
             elif expected_type == "float":
                 for row_idx, val in valid.items():
                     if isinstance(val, bool):
-                        errors.append(f"Строка {row_idx + 1}: поле '{name}' должно быть float, получено '{val}'")
+                        errors.append(f"Строка {row_idx + 1}: поле '{col_name}' должно быть float, получено '{val}'")
                     else:
                         try:
                             float(str(val).replace(",", "."))
                         except (ValueError, TypeError):
-                            errors.append(f"Строка {row_idx + 1}: поле '{name}' должно быть float, получено '{val}'")
+                            errors.append(f"Строка {row_idx + 1}: поле '{col_name}' должно быть float, получено '{val}'")
 
             elif expected_type == "boolean":
                 allowed = {True, False, 1, 0, "true", "false", "1", "0", "yes", "no", "да", "нет"}
                 for row_idx, val in valid.items():
                     norm = str(val).strip().lower() if isinstance(val, str) else val
                     if norm not in allowed:
-                        errors.append(f"Строка {row_idx + 1}: поле '{name}' должно быть boolean, получено '{val}'")
+                        errors.append(f"Строка {row_idx + 1}: поле '{col_name}' должно быть boolean, получено '{val}'")
 
             elif expected_type == "date":
                 fmt = fld.get("format", "YYYY-MM-DD")
@@ -134,7 +138,7 @@ class ParquetValidator:
                     try:
                         pd.to_datetime(str(val), format=py_fmt)
                     except Exception:
-                        errors.append(f"Строка {row_idx + 1}: поле '{name}' не соответствует формату даты '{fmt}' ('{val}')")
+                        errors.append(f"Строка {row_idx + 1}: поле '{col_name}' не соответствует формату даты '{fmt}' ('{val}')")
 
             # 4. Проверка диапазонов значений (min / max)
             min_val = fld.get("min")
@@ -144,9 +148,9 @@ class ParquetValidator:
                     try:
                         num = float(val)
                         if min_val is not None and num < min_val:
-                            errors.append(f"Строка {row_idx + 1}: поле '{name}' ({val}) меньше минимума ({min_val})")
+                            errors.append(f"Строка {row_idx + 1}: поле '{col_name}' ({val}) меньше минимума ({min_val})")
                         if max_val is not None and num > max_val:
-                            errors.append(f"Строка {row_idx + 1}: поле '{name}' ({val}) больше максимума ({max_val})")
+                            errors.append(f"Строка {row_idx + 1}: поле '{col_name}' ({val}) больше максимума ({max_val})")
                     except (ValueError, TypeError):
                         pass
 
@@ -157,9 +161,9 @@ class ParquetValidator:
                 for row_idx, val in valid.items():
                     str_len = len(str(val))
                     if min_len is not None and str_len < min_len:
-                        errors.append(f"Строка {row_idx + 1}: длина '{name}' ({str_len}) меньше минимальной ({min_len})")
+                        errors.append(f"Строка {row_idx + 1}: длина '{col_name}' ({str_len}) меньше минимальной ({min_len})")
                     if max_len is not None and str_len > max_len:
-                        errors.append(f"Строка {row_idx + 1}: длина '{name}' ({str_len}) больше максимальной ({max_len})")
+                        errors.append(f"Строка {row_idx + 1}: длина '{col_name}' ({str_len}) больше максимальной ({max_len})")
 
             # 6. Проверка по регулярному выражению (pattern)
             pattern = fld.get("pattern")
@@ -167,7 +171,7 @@ class ParquetValidator:
                 regex = re.compile(pattern)
                 for row_idx, val in valid.items():
                     if not regex.search(str(val)):
-                        errors.append(f"Строка {row_idx + 1}: поле '{name}' ('{val}') не соответствует формату")
+                        errors.append(f"Строка {row_idx + 1}: поле '{col_name}' ('{val}') не соответствует формату")
 
         return ValidationResult(
             is_valid=len(errors) == 0,

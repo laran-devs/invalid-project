@@ -1,0 +1,6 @@
+{
+  "save_intermediate_parquet": true,
+  "intermediate_dir": "data/processed",
+  "output_dir": "data/output",
+  "schema_path": "schema.json"
+}
