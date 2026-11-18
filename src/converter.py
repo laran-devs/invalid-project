@@ -1,18 +1,17 @@
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 from .models import File
+from .validator import ParquetValidator, ValidationResult
 
 
 class FileConverter:
-    """Автоматический конвертер между табличными форматами данных."""
 
     SUPPORTED_OUTPUT_FORMATS = {"csv", "json", "xml", "xlsx"}
 
     @staticmethod
     def load_config(config: Optional[Union[str, Path, dict]] = None) -> dict:
-        """Загружает настройки из config.json или переданного пути/словаря."""
         defaults = {
             "save_intermediate_parquet": True,
             "intermediate_dir": "data/processed",
@@ -20,19 +19,15 @@ class FileConverter:
             "schema_path": "schema.json",
         }
         if config is None:
-            default_path = Path("config.json")
-            if default_path.exists():
-                with open(default_path, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                    defaults.update(cfg)
+            p = Path("config.json")
+            if p.exists():
+                defaults.update(json.loads(p.read_text(encoding="utf-8")))
             return defaults
 
         if isinstance(config, (str, Path)):
             path = Path(config)
             if path.exists():
-                with open(path, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                    defaults.update(cfg)
+                defaults.update(json.loads(path.read_text(encoding="utf-8")))
             return defaults
 
         if isinstance(config, dict):
@@ -42,40 +37,42 @@ class FileConverter:
         raise TypeError("Конфигурация должна быть путем к JSON-файлу или словарем")
 
     @staticmethod
-    def _apply_single_transform(series: pd.Series, transform_name: str) -> pd.Series:
-        """Применяет отдельное правило трансформации к колонке."""
-        norm_name = transform_name.strip().lower()
+    def _apply_single_transform(series: pd.Series, transform_def: Union[str, dict]) -> pd.Series:
+        if isinstance(transform_def, str):
+            norm_name = transform_def.strip().lower()
 
-        if norm_name in ("trim", "strip"):
-            return series.map(lambda x: x.strip() if isinstance(x, str) else x)
+            if norm_name in ("trim", "strip"):
+                return series.map(lambda x: x.strip() if isinstance(x, str) else x)
 
-        elif norm_name in ("lowercase", "lower"):
-            return series.map(lambda x: x.lower() if isinstance(x, str) else x)
+            if norm_name in ("lowercase", "lower"):
+                return series.map(lambda x: x.lower() if isinstance(x, str) else x)
 
-        elif norm_name in ("uppercase", "upper"):
-            return series.map(lambda x: x.upper() if isinstance(x, str) else x)
+            if norm_name in ("uppercase", "upper"):
+                return series.map(lambda x: x.upper() if isinstance(x, str) else x)
 
-        elif norm_name in ("timestamp_to_date", "to_date"):
-            def _to_date(val):
-                if pd.isna(val) or val is None or val == "":
-                    return val
-                try:
-                    num = float(val)
-                    unit = "ms" if num > 1e11 else "s"
-                    return pd.to_datetime(num, unit=unit).strftime("%Y-%m-%d")
-                except (ValueError, TypeError):
-                    try:
-                        return pd.to_datetime(val).strftime("%Y-%m-%d")
-                    except Exception:
+            if norm_name in ("timestamp_to_date", "to_date"):
+                def _to_date(val):
+                    if pd.isna(val) or val is None or val == "":
                         return val
+                    try:
+                        num = float(val)
+                        unit = "ms" if num > 1e11 else "s"
+                        return pd.to_datetime(num, unit=unit).strftime("%Y-%m-%d")
+                    except (ValueError, TypeError):
+                        try:
+                            return pd.to_datetime(val).strftime("%Y-%m-%d")
+                        except Exception:
+                            return val
 
-            return series.map(_to_date)
+                return series.map(_to_date)
 
-        else:
-            raise ValueError(
-                f"Неизвестная трансформация: '{transform_name}'. "
-                f"Допустимые: trim, strip, lowercase, lower, uppercase, upper, timestamp_to_date"
-            )
+        elif isinstance(transform_def, dict):
+            if "replace" in transform_def or "dictionary" in transform_def:
+                rep_dict = transform_def.get("replace") or transform_def.get("dictionary")
+                if isinstance(rep_dict, dict):
+                    return series.map(lambda x: rep_dict.get(x, x))
+
+        return series
 
     @classmethod
     def apply_transformations(
@@ -83,25 +80,14 @@ class FileConverter:
         df: pd.DataFrame,
         schema: Union[str, Path, dict],
     ) -> pd.DataFrame:
-        """Применяет трансформации (trim, case, timestamp_to_date) по правилам из схемы."""
-        if isinstance(schema, (str, Path)):
-            path = Path(schema)
-            if not path.exists():
-                return df
-            with open(path, "r", encoding="utf-8") as f:
-                schema_dict = json.load(f)
-        elif isinstance(schema, dict):
-            schema_dict = schema
-        else:
-            return df
-
+        schema_dict = ParquetValidator.load_schema(schema)
         fields = schema_dict.get("fields", [])
-        df = df.copy()
+        res_df = df.copy()
 
         for fld in fields:
             name = fld.get("name")
             target_name = fld.get("target_name")
-            col = name if name in df.columns else (target_name if target_name in df.columns else None)
+            col = name if name in res_df.columns else (target_name if target_name in res_df.columns else None)
             if not col:
                 continue
 
@@ -109,28 +95,17 @@ class FileConverter:
             if not transforms:
                 continue
 
-            if isinstance(transforms, str):
+            if isinstance(transforms, (str, dict)):
                 transforms = [transforms]
 
             for tr in transforms:
-                df[col] = cls._apply_single_transform(df[col], tr)
+                res_df[col] = cls._apply_single_transform(res_df[col], tr)
 
-        return df
+        return res_df
 
     @staticmethod
     def get_column_mappings(schema: Union[str, Path, dict]) -> Dict[str, str]:
-        """Извлекает словарь маппинга {name: target_name} из схемы."""
-        if isinstance(schema, (str, Path)):
-            path = Path(schema)
-            if not path.exists():
-                return {}
-            with open(path, "r", encoding="utf-8") as f:
-                schema_dict = json.load(f)
-        elif isinstance(schema, dict):
-            schema_dict = schema
-        else:
-            return {}
-
+        schema_dict = ParquetValidator.load_schema(schema)
         fields = schema_dict.get("fields", [])
         return {
             fld["name"]: fld["target_name"]
@@ -144,7 +119,6 @@ class FileConverter:
         df: pd.DataFrame,
         schema: Union[str, Path, dict],
     ) -> pd.DataFrame:
-        """Переименовывает колонки DataFrame в соответствии с target_name из схемы."""
         mappings = cls.get_column_mappings(schema)
         if mappings:
             return df.rename(columns=mappings)
@@ -152,7 +126,6 @@ class FileConverter:
 
     @staticmethod
     def read_to_dataframe(file: File) -> pd.DataFrame:
-        """Считывает файл поддерживаемого входного формата в DataFrame."""
         match file.format:
             case "csv":
                 return pd.read_csv(
@@ -180,7 +153,7 @@ class FileConverter:
             case _:
                 raise ValueError(
                     f"Неподдерживаемый формат для чтения: '{file.format}'. "
-                    f"Допустимые входные форматы: {', '.join(sorted(File.SUPPORTED_FORMATS))}"
+                    f"Допустимые: {', '.join(sorted(File.SUPPORTED_FORMATS))}"
                 )
 
     @classmethod
@@ -190,7 +163,6 @@ class FileConverter:
         target_path: Union[str, Path],
         target_format: Optional[str] = None,
     ) -> Path:
-        """Записывает DataFrame в указанный целевой формат."""
         target = Path(target_path).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         fmt = (target_format or target.suffix.lstrip(".")).lower()
@@ -221,7 +193,6 @@ class FileConverter:
                 df.to_excel(target, index=False, engine="openpyxl")
 
             case "parquet":
-                # Внутренняя запись в Parquet (для промежуточного сохранения)
                 df.to_parquet(
                     target,
                     engine="pyarrow",
@@ -244,6 +215,80 @@ class FileConverter:
         return target
 
     @classmethod
+    def convert_pipeline(
+        cls,
+        file: File,
+        target_format: str,
+        schema_path: Optional[Union[str, Path]] = None,
+        output_path: Optional[Union[str, Path]] = None,
+        errors_path: Optional[Union[str, Path]] = None,
+        config: Optional[Union[str, Path, dict]] = None,
+    ) -> Tuple[Path, Optional[Path], ValidationResult]:
+        cfg = cls.load_config(config)
+        target_fmt = target_format.lstrip(".").lower()
+
+        if target_fmt not in cls.SUPPORTED_OUTPUT_FORMATS:
+            raise ValueError(
+                f"Неподдерживаемый целевой формат: '{target_fmt}'. "
+                f"Допустимые: {', '.join(sorted(cls.SUPPORTED_OUTPUT_FORMATS))}"
+            )
+
+        df = cls.read_to_dataframe(file)
+
+        schema_to_use = schema_path or cfg.get("schema_path")
+        val_result = None
+
+        if schema_to_use and Path(schema_to_use).exists():
+            val_result = ParquetValidator.validate(df, schema_to_use)
+
+        if val_result is not None and len(val_result.invalid_indices) > 0:
+            invalid_indices_list = sorted(list(val_result.invalid_indices))
+            invalid_df = df.iloc[invalid_indices_list].copy()
+            valid_df = df.drop(index=invalid_indices_list).copy()
+        else:
+            invalid_df = pd.DataFrame()
+            valid_df = df.copy()
+
+        if val_result is None:
+            val_result = ValidationResult(
+                total_records=len(df),
+                valid_count=len(df),
+                invalid_indices=set(),
+                errors=[],
+                errors_table=[],
+            )
+
+        if schema_to_use and Path(schema_to_use).exists():
+            valid_df = cls.apply_transformations(valid_df, schema_to_use)
+
+        if cfg.get("save_intermediate_parquet", True):
+            inter_dir = Path(cfg.get("intermediate_dir", "data/processed")).resolve()
+            inter_file = inter_dir / f"{file.path.stem}.parquet"
+            cls.write_dataframe(valid_df, inter_file, "parquet")
+
+        if schema_to_use and Path(schema_to_use).exists():
+            valid_df = cls.apply_column_mappings(valid_df, schema_to_use)
+
+        if output_path:
+            out_file = Path(output_path).resolve()
+        else:
+            out_dir = Path(cfg.get("output_dir", "data/output")).resolve()
+            out_file = out_dir / f"{file.path.stem}.{target_fmt}"
+
+        cls.write_dataframe(valid_df, out_file, target_fmt)
+
+        err_file = None
+        if not invalid_df.empty:
+            if errors_path:
+                err_file = Path(errors_path).resolve()
+            else:
+                err_dir = out_file.parent
+                err_file = err_dir / "errors.csv"
+            cls.write_dataframe(invalid_df, err_file, "csv")
+
+        return out_file, err_file, val_result
+
+    @classmethod
     def convert(
         cls,
         file: File,
@@ -256,78 +301,17 @@ class FileConverter:
         apply_transforms: bool = True,
         apply_mapping: bool = True,
     ) -> Path:
-        """
-        Конвертирует входной файл в один из выходных форматов (csv, json, xml, xlsx).
-        Последовательность конвейера:
-        1. Чтение исходного файла
-        2. Применение трансформаций (trim, uppercase/lowercase, timestamp_to_date)
-        3. Промежуточное сохранение в Parquet (если включено в конфиге)
-        4. Маппинг колонок (target_name)
-        5. Сохранение в итоговый формат в output_dir
-        """
-        target_fmt = target_format.lstrip(".").lower()
+        out_p = None
+        if output_dir and output_name:
+            out_p = Path(output_dir) / output_name
+        elif output_dir:
+            out_p = Path(output_dir) / f"{file.path.stem}.{target_format.lstrip('.')}"
 
-        if target_fmt == "parquet":
-            raise ValueError(
-                "Формат 'parquet' является исключительно промежуточным "
-                "и недоступен в качестве целевого формата. "
-                f"Допустимые выходные форматы: {', '.join(sorted(cls.SUPPORTED_OUTPUT_FORMATS))}"
-            )
-
-        if target_fmt not in cls.SUPPORTED_OUTPUT_FORMATS:
-            if target_fmt == "xls":
-                raise ValueError(
-                    "Запись в устаревший формат '.xls' не поддерживается. "
-                    "Для Excel используйте формат '.xlsx'."
-                )
-            raise ValueError(
-                f"Неподдерживаемый целевой формат: '{target_fmt}'. "
-                f"Допустимые выходные форматы: {', '.join(sorted(cls.SUPPORTED_OUTPUT_FORMATS))}"
-            )
-
-        cfg = cls.load_config(config)
-
-        should_save_parquet = (
-            save_intermediate_parquet
-            if save_intermediate_parquet is not None
-            else cfg.get("save_intermediate_parquet", True)
+        saved_path, _, _ = cls.convert_pipeline(
+            file=file,
+            target_format=target_format,
+            schema_path=schema,
+            output_path=out_p,
+            config=config,
         )
-
-        df = cls.read_to_dataframe(file)
-        schema_to_use = schema or cfg.get("schema_path", "schema.json")
-
-        # 1. Трансформации данных
-        if apply_transforms and schema_to_use:
-            df = cls.apply_transformations(df, schema_to_use)
-
-        # 2. Промежуточный Parquet (сохраняется с исходными именами, но трансформированными данными)
-        if should_save_parquet:
-            inter_dir = Path(cfg.get("intermediate_dir", "data/processed")).resolve()
-            inter_path = inter_dir / f"{file.path.stem}.parquet"
-            cls.write_dataframe(df, inter_path, "parquet")
-
-        # 3. Маппинг колонок (переименование по target_name из schema.json)
-        if apply_mapping and schema_to_use:
-            df = cls.apply_column_mappings(df, schema_to_use)
-
-        # 4. Сохранение в итоговый формат
-        out_dir = Path(output_dir or cfg.get("output_dir", "data/output")).resolve()
-        filename = output_name or f"{file.path.stem}.{target_fmt}"
-        target_path = out_dir / filename
-
-        return cls.write_dataframe(df, target_path, target_fmt)
-
-    @classmethod
-    def convert_to_parquet(
-        cls,
-        file: File,
-        output_dir: Optional[Union[str, Path]] = None,
-        output_name: Optional[str] = None,
-    ) -> Path:
-        """Конвертирует переданный File в Parquet (сохранено для обратной совместимости)."""
-        target_dir = Path(output_dir or "data/processed").resolve()
-        target_dir.mkdir(parents=True, exist_ok=True)
-        filename = output_name or f"{file.path.stem}.parquet"
-        target_path = target_dir / filename
-        df = cls.read_to_dataframe(file)
-        return cls.write_dataframe(df, target_path, "parquet")
+        return saved_path

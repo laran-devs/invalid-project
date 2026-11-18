@@ -3,8 +3,6 @@ from typing import Optional, Union
 
 
 class File:
-    """Инкапсулирует метаданные входного файла на диске."""
-
     SUPPORTED_FORMATS = {"csv", "json", "xml", "xlsx", "xls"}
 
     def __init__(self, path: Union[str, Path], file_format: Optional[str] = None):

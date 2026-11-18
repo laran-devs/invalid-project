@@ -1,37 +1,67 @@
-# DataBridge (Converter, Transformer & Validator)
+# DataBridge CLI
 
-Утилита для конвертации табличных данных, валидации, трансформации и маппинга полей.
+Консольная утилита для конвертации табличных данных, валидации, трансформаций и анализа датасетов.
 
-## Возможности
+## Установка CLI
 
-1. **Конвертация форматов данных:**
-   * **Входные форматы:** `csv`, `json`, `xml`, `xlsx`, `xls`.
-   * **Выходные форматы:** `csv`, `json`, `xml`, `xlsx` (сохраняются в `data/output/`).
-   * **Промежуточный Parquet:** сохраняется в `data/processed/` при включённой настройке `"save_intermediate_parquet": true` в [`config.json`](config.json).
-2. **Трансформации данных (в [`schema.json`](schema.json)):**
-   * Обрезка пробелов: `"trim"` / `"strip"`.
-   * Приведение к регистру: `"uppercase"` / `"upper"` и `"lowercase"` / `"lower"`.
-   * Вычисление даты из timestamp: `"timestamp_to_date"`.
-3. **Маппинг колонок (в [`schema.json`](schema.json)):**
-   * Переименование полей в целевом файле через свойство `"target_name"`.
-4. **Валидация по JSON-схеме:**
-   * Типы данных: `integer`, `float`, `string`, `boolean`, `date`.
-   * Обязательность (`required`), уникальность (`unique`).
-   * Диапазоны (`min`, `max`), длина строк (`min_length`, `max_length`), регулярные выражения (`pattern`).
+Для того чтобы команда `databridge` была доступна в терминале, установите проект в режиме разработки:
+
+```bash
+pip install -e .
+```
+
+Либо вызывайте через Python:
+```bash
+python main.py <команда> [параметры]
+```
+
+---
+
+## Команды CLI
+
+### 1. Конвертация данных (`convert`)
+
+Конвертирует файл в один из поддерживаемых целевых форматов (`csv`, `json`, `xml`, `xlsx`) с автоматическим применением трансформаций и маппинга колонок из схемы. Некорректные записи отсекаются в `errors.csv`.
+
+```bash
+# Базовый запуск (схема schema.json используется по умолчанию):
+databridge convert data/raw/valid_csv.csv --to json
+
+# С явным указанием схемы и пути сохранения:
+databridge convert data/raw/valid_csv.csv --to json --config schema.json --output data/output/result.json
+```
+
+---
+
+### 2. Валидация данных (`validate`)
+
+Проверяет входной файл на соответствие правилам из JSON-схеме. Возвращает код `0`, если данные валидны, и код `1`, если обнаружены ошибки.
+
+```bash
+# Валидация файла по схеме:
+databridge validate data/raw/valid_csv.csv --config schema.json
+
+# Валидация с генерацией HTML-отчета:
+databridge validate data/raw/invalid_csv.csv --config schema.json --report report.html
+```
+
+---
+
+### 3. Статистика и профилирование (`stats`)
+
+Выводит сводку о структуре датасета: типы данных, число заполненных значений, процент пропусков, количество уникальных значений и числовые параметры (min, max, avg).
+
+```bash
+databridge stats data/raw/valid_csv.csv
+```
+
+---
 
 ## Конфигурация
 
-### 1. `config.json` (настройки среды)
-```json
-{
-  "save_intermediate_parquet": true,
-  "intermediate_dir": "data/processed",
-  "output_dir": "data/output",
-  "schema_path": "schema.json"
-}
-```
+### `schema.json`
+Определяет контракт данных: типы, ограничения валидации, трансформации (`trim`, `uppercase`/`lowercase`, `timestamp_to_date`) и маппинг имён (`target_name`):
 
-### 2. `schema.json` (контракт данных: валидация, трансформации, маппинг)
 ```json
 {
   "fields": [
@@ -66,20 +96,14 @@
 }
 ```
 
-## Быстрый старт
+### `config.json`
+Определяет глобальные настройки среды:
 
-```python
-from src import File, FileConverter, ParquetValidator
-
-# 1. Конвертация с трансформациями и маппингом:
-file = File("data/raw/valid_csv.csv")
-output_path = FileConverter.convert(file, target_format="json")
-print(f"Итоговый файл: {output_path}")
-
-# 2. Валидация промежуточного Parquet:
-result = ParquetValidator.validate("data/processed/valid_csv.parquet", "schema.json")
-if result:
-    print("Данные валидны!")
-else:
-    print(result.summary())
+```json
+{
+  "save_intermediate_parquet": true,
+  "intermediate_dir": "data/processed",
+  "output_dir": "data/output",
+  "schema_path": "schema.json"
+}
 ```
