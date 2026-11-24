@@ -21,7 +21,7 @@ flowchart TD
     SR["StatsReporter (src.reporters)"]
 
     InputFile["Входной файл (CSV, JSON, XML, Excel)"] --> RF
-    Schema["Схема (JSON / YAML)"] --> VE
+    Schema["Схема (JSON)"] --> VE
 
     CLI -->|Команда convert / validate / stats| RF
     RF -->|pd.DataFrame| VE

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<records>
+  <record>
+    <id>1</id>
+    <name>Иван Иванов</name>
+    <email>ivan@mail.ru</email>
+    <age>25</age>
+    <birth_date>1999-01-15</birth_date>
+  </record>
+  <record>
+    <id>2</id>
+    <name>Мария Смирнова</name>
+    <email>maria@mail.ru</email>
+    <age>30</age>
+    <birth_date>1994-05-20</birth_date>
+  </record>
+  <record>
+    <id>3</id>
+    <name>Петр Васильев</name>
+    <email>petr@yandex.ru</email>
+    <age>28</age>
+    <birth_date>1996-03-10</birth_date>
+  </record>
+</records>

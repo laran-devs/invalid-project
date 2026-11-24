@@ -1,0 +1,37 @@
+[
+  {
+    "id": 1,
+    "name": "Иван Иванов",
+    "email": "ivan@mail.ru",
+    "age": 25,
+    "birth_date": "1999-01-15"
+  },
+  {
+    "id": 2,
+    "name": "Мария Смирнова",
+    "email": "maria.mail.ru",
+    "age": 30,
+    "birth_date": "1994-05-20"
+  },
+  {
+    "id": 3,
+    "name": "Петр Васильев",
+    "email": "petr@mail.ru",
+    "age": 200,
+    "birth_date": "2000-03-10"
+  },
+  {
+    "id": 4,
+    "name": "",
+    "email": "empty@mail.ru",
+    "age": 22,
+    "birth_date": "2002-07-01"
+  },
+  {
+    "id": 1,
+    "name": "Дубликат",
+    "email": "dup@mail.ru",
+    "age": 35,
+    "birth_date": "1989-01-01"
+  }
+]
