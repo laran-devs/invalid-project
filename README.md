@@ -1,109 +1,104 @@
-# DataBridge CLI
+# DataBridge
 
-Консольная утилита для конвертации табличных данных, валидации, трансформаций и анализа датасетов.
+**DataBridge** — консольная модульная утилита (CLI) для конвертации, валидации по схеме, очистки и трансформации табличных данных. Разработана для автоматизации обработки данных между форматами CSV, JSON, XML, Excel (.xlsx, .xls) без использования внешних СУБД.
 
-## Установка CLI
+---
 
-Для того чтобы команда `databridge` была доступна в терминале, установите проект в режиме разработки:
+## 1. Возможности и архитектура
 
+- **Универсальное чтение (`src/readers/`)**: Автоматическое определение формата по расширению файла. Поддерживает CSV (с автоопределением разделителя), JSON (массивы объектов), XML (плоская структура) и Excel (.xlsx / .xls).
+- **Движок валидации (`src/validators/`)**: Проверка по декларативной схеме в формате **JSON** или **YAML**. Поддерживает проверки: `required`, `unique`, типы (`integer`, `float`, `string`, `boolean`, `date`), диапазоны `min`/`max`, длину строк `min_length`/`max_length`
+- **Сепарация ошибок**: Некорректные записи автоматически изолируются в отдельный файл `errors.csv`, а валидные продолжают обработку.
+- **Трансформация и маппинг (`src/converters/`)**: Удаление пробелов (`trim`), приведение регистра (`uppercase`/`lowercase`), вычисление даты из timestamp (`timestamp_to_date`), словарная замена (`replace`) и переименование полей (`target_name`). Сохранение промежуточных срезов в Parquet.
+- **Отчётность (`src/reporters/`)**: Консольная сводка, подробный автономный `report.html` с таблицей дефектов и модуль дата-профилирования `stats`.
+
+---
+
+## 2. Структура проекта
+
+```text
+├── DOCS/                        # Комплект проектной документации
+│   ├── Architecture.md          # Архитектурная схема (Pipes & Filters, Mermaid)
+│   ├── Config_Spec.md           # Спецификация схем JSON
+│   ├── Requirements.md          # Функциональные и нефункциональные требования
+│   ├── Test_Plan.md             # План тестирования (22 сценария)
+│   ├── Test_Report.md           # Отчёт о прохождении тестов
+│   ├── Usage_Guide.md           # Сценарии использования и примеры «до/после»
+│   └── User_Manual.md           # Руководство пользователя
+├── samples/                     # Примеры тестовых данных
+│   ├── valid.csv                # Валидный набор данных
+│   ├── invalid.csv              # Набор данных с 10+ дефектами
+│   ├── input.csv                # Входной файл для демонстрации конвейера
+│   ├── schema.json              # Схема валидации в формате JSON
+│   ├── output.json              # Результат конвертации
+│   ├── errors.csv               # Изолированные некорректные записи
+│   └── report.html              # Сгенерированный HTML-отчёт
+├── src/                         # Исходный код системы
+│   ├── cli/                     # CLI диспетчер (parser, commands)
+│   ├── readers/                 # Модули чтения (CSV, JSON, XML, Excel, Factory)
+│   ├── validators/              # Движок валидации, правила, загрузка схем
+│   ├── converters/              # Конвейер, трансформации, сериализаторы
+│   └── reporters/               # HTML-отчёт и профилировщик данных
+├── tests/                       # Автоматические тесты
+│   └── test_databridge.py       # 22 unit-теста (100% pass)
+├── main.py                      # Точка входа в CLI
+├── pyproject.toml               # Конфигурация сборки и команды `databridge`
+├── requirements.txt             # Зависимости проекта
+├── TEAM.md                      # Состав команды и распределение ролей
+├── CONTRIBUTIONS.md             # Персональный вклад участников
+```
+
+---
+
+## 3. Быстрый старт
+
+### Установка зависимостей:
+```bash
+pip install -r requirements.txt
+```
+
+### Установка утилиты в систему:
 ```bash
 pip install -e .
 ```
 
-Либо вызывайте через Python:
+---
+
+## 4. Примеры команд CLI
+
+### 4.1. Конвертация данных
 ```bash
-python main.py <команда> [параметры]
+databridge convert samples/input.csv --to json --output samples/output.json
+```
+*Консольный вывод*:
+```text
+Всего записей: 12
+Успешно обработано: 2
+Ошибок: 10
+  - Строка 6: поле "id" должно быть уникальным (дубликат: 1)
+  - Строка 12: поле "id" не соответствует типу integer
+  - Строка 4: поле "name" обязательно для заполнения
+  - Строка 8: поле "name" короче минимальной длины (2)
+  - Строка 9: поле "email" обязательно для заполнения
+  - Строка 2: поле "email" не соответствует формату
+  - Строка 5: поле "age" не соответствует типу integer
+  - Строка 3: поле "age" вне диапазона (200)
+  - Строка 10: поле "age" вне диапазона (12)
+  - Строка 7: поле "birth_date" не соответствует формату даты (YYYY-MM-DD)
+Результат сохранён: output.json
+Ошибки сохранены: errors.csv
+```
+
+### 4.2. Валидация с генерацией HTML-отчёта
+```bash
+databridge validate samples/invalid.csv --config samples/schema.json --report samples/report.html
 ```
 
 ---
 
-## Команды CLI
-
-### 1. Конвертация данных (`convert`)
-
-Конвертирует файл в один из поддерживаемых целевых форматов (`csv`, `json`, `xml`, `xlsx`) с автоматическим применением трансформаций и маппинга колонок из схемы. Некорректные записи отсекаются в `errors.csv`.
+## 5. Запуск тестов
 
 ```bash
-# Базовый запуск (схема schema.json используется по умолчанию):
-databridge convert data/raw/valid_csv.csv --to json
-
-# С явным указанием схемы и пути сохранения:
-databridge convert data/raw/valid_csv.csv --to json --config schema.json --output data/output/result.json
+python -m unittest discover tests
 ```
-
----
-
-### 2. Валидация данных (`validate`)
-
-Проверяет входной файл на соответствие правилам из JSON-схеме. Возвращает код `0`, если данные валидны, и код `1`, если обнаружены ошибки.
-
-```bash
-# Валидация файла по схеме:
-databridge validate data/raw/valid_csv.csv --config schema.json
-
-# Валидация с генерацией HTML-отчета:
-databridge validate data/raw/invalid_csv.csv --config schema.json --report report.html
-```
-
----
-
-### 3. Статистика и профилирование (`stats`)
-
-Выводит сводку о структуре датасета: типы данных, число заполненных значений, процент пропусков, количество уникальных значений и числовые параметры (min, max, avg).
-
-```bash
-databridge stats data/raw/valid_csv.csv
-```
-
----
-
-## Конфигурация
-
-### `schema.json`
-Определяет контракт данных: типы, ограничения валидации, трансформации (`trim`, `uppercase`/`lowercase`, `timestamp_to_date`) и маппинг имён (`target_name`):
-
-```json
-{
-  "fields": [
-    {
-      "name": "id",
-      "type": "integer",
-      "required": true,
-      "unique": true
-    },
-    {
-      "name": "name",
-      "target_name": "full_name",
-      "type": "string",
-      "required": true,
-      "transform": ["trim", "uppercase"]
-    },
-    {
-      "name": "email",
-      "type": "string",
-      "required": true,
-      "pattern": "^[^@]+@[^@]+\\.[^@]+$",
-      "transform": ["trim", "lowercase"]
-    },
-    {
-      "name": "birth_date",
-      "target_name": "dob",
-      "type": "date",
-      "format": "YYYY-MM-DD",
-      "transform": "timestamp_to_date"
-    }
-  ]
-}
-```
-
-### `config.json`
-Определяет глобальные настройки среды:
-
-```json
-{
-  "save_intermediate_parquet": true,
-  "intermediate_dir": "data/processed",
-  "output_dir": "data/output",
-  "schema_path": "schema.json"
-}
-```
+*Результат*: 22 теста пройдено успешно.

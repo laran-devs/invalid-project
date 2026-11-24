@@ -1,0 +1,23 @@
+[
+  {
+    "id":1,
+    "full_name":"ИВАН ИВАНОВ",
+    "email":"ivan@mail.ru",
+    "age":25,
+    "dob":"1999-01-15"
+  },
+  {
+    "id":2,
+    "full_name":"МАРИЯ СМИРНОВА",
+    "email":"maria@mail.ru",
+    "age":30,
+    "dob":"1994-05-20"
+  },
+  {
+    "id":3,
+    "full_name":"ПЕТР ВАСИЛЬЕВ",
+    "email":"petr@yandex.ru",
+    "age":28,
+    "dob":"1996-03-10"
+  }
+]

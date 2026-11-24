@@ -5,9 +5,28 @@ import unittest
 import pandas as pd
 
 from src.models import File
-from src.converter import FileConverter
-from src.validator import ParquetValidator, ValidationResult
+from src.readers import ReaderFactory, CSVReader, JSONReader, XMLReader, ExcelReader
+from src.validators import (
+    ValidationEngine,
+    ValidationResult,
+    load_schema,
+    check_required,
+    check_unique,
+    check_type,
+    check_range,
+    check_length,
+    check_pattern,
+)
+from src.converters import (
+    ConversionPipeline,
+    FileConverter,
+    DataWriter,
+    apply_transformations,
+    apply_column_mappings,
+)
+from src.reporters import HTMLReporter, StatsReporter, format_bytes
 from src.stats import get_dataframe_stats
+from src.cli.parser import build_parser
 
 
 class TestDataBridge(unittest.TestCase):
@@ -68,7 +87,7 @@ class TestDataBridge(unittest.TestCase):
             {"id": 1, "name": "Иван", "email": "ivan@mail.ru", "age": 25, "birth_date": "1999-01-15"},
             {"id": 2, "name": "Мария", "email": "maria@mail.ru", "age": 30, "birth_date": "1994-05-20"},
         ])
-        res = ParquetValidator.validate(df, self.schema)
+        res = ValidationEngine.validate(df, self.schema)
         self.assertTrue(res.is_valid)
         self.assertEqual(res.valid_count, 2)
         self.assertEqual(len(res.invalid_indices), 0)
@@ -77,7 +96,7 @@ class TestDataBridge(unittest.TestCase):
         df = pd.DataFrame([
             {"id": 1, "name": "   ", "email": "ivan@mail.ru", "age": 25, "birth_date": "1999-01-15"}
         ])
-        res = ParquetValidator.validate(df, self.schema)
+        res = ValidationEngine.validate(df, self.schema)
         self.assertFalse(res.is_valid)
         self.assertIn(0, res.invalid_indices)
 
@@ -86,7 +105,7 @@ class TestDataBridge(unittest.TestCase):
             {"id": 1, "name": "Иван", "email": "ivan@mail.ru", "age": 25, "birth_date": "1999-01-15"},
             {"id": 1, "name": "Петр", "email": "petr@mail.ru", "age": 30, "birth_date": "1990-01-01"},
         ])
-        res = ParquetValidator.validate(df, self.schema)
+        res = ValidationEngine.validate(df, self.schema)
         self.assertFalse(res.is_valid)
         self.assertIn(1, res.invalid_indices)
 
@@ -94,7 +113,7 @@ class TestDataBridge(unittest.TestCase):
         df = pd.DataFrame([
             {"id": "not_an_int", "name": "Иван", "email": "ivan@mail.ru", "age": 25, "birth_date": "1999-01-15"}
         ])
-        res = ParquetValidator.validate(df, self.schema)
+        res = ValidationEngine.validate(df, self.schema)
         self.assertFalse(res.is_valid)
         self.assertIn(0, res.invalid_indices)
 
@@ -102,7 +121,7 @@ class TestDataBridge(unittest.TestCase):
         df = pd.DataFrame([
             {"id": 1, "name": "Иван", "email": "bad_email_format", "age": 25, "birth_date": "1999-01-15"}
         ])
-        res = ParquetValidator.validate(df, self.schema)
+        res = ValidationEngine.validate(df, self.schema)
         self.assertFalse(res.is_valid)
         self.assertIn(0, res.invalid_indices)
 
@@ -111,7 +130,7 @@ class TestDataBridge(unittest.TestCase):
             {"id": 1, "name": "Иван", "email": "ivan@mail.ru", "age": 120, "birth_date": "1999-01-15"},
             {"id": 2, "name": "Мария", "email": "maria@mail.ru", "age": 10, "birth_date": "1999-01-15"},
         ])
-        res = ParquetValidator.validate(df, self.schema)
+        res = ValidationEngine.validate(df, self.schema)
         self.assertFalse(res.is_valid)
         self.assertEqual(len(res.invalid_indices), 2)
 
@@ -120,7 +139,7 @@ class TestDataBridge(unittest.TestCase):
             {"id": 1, "name": "A", "email": "ivan@mail.ru", "age": 25, "birth_date": "1999-01-15"},
             {"id": 2, "name": "x" * 60, "email": "maria@mail.ru", "age": 30, "birth_date": "1999-01-15"},
         ])
-        res = ParquetValidator.validate(df, self.schema)
+        res = ValidationEngine.validate(df, self.schema)
         self.assertFalse(res.is_valid)
         self.assertEqual(len(res.invalid_indices), 2)
 
@@ -128,7 +147,7 @@ class TestDataBridge(unittest.TestCase):
         df = pd.DataFrame([
             {"name": "   иван   ", "email": "  IVAN@MAIL.RU  "}
         ])
-        res_df = FileConverter.apply_transformations(df, self.schema)
+        res_df = apply_transformations(df, self.schema)
         self.assertEqual(res_df.loc[0, "name"], "ИВАН")
         self.assertEqual(res_df.loc[0, "email"], "ivan@mail.ru")
 
@@ -136,7 +155,7 @@ class TestDataBridge(unittest.TestCase):
         df = pd.DataFrame([
             {"birth_date": 916358400}
         ])
-        res_df = FileConverter.apply_transformations(df, self.schema)
+        res_df = apply_transformations(df, self.schema)
         self.assertEqual(res_df.loc[0, "birth_date"], "1999-01-15")
 
     def test_transformation_dictionary_replace(self):
@@ -149,7 +168,7 @@ class TestDataBridge(unittest.TestCase):
             ]
         }
         df = pd.DataFrame([{"status": "A"}, {"status": "I"}])
-        res_df = FileConverter.apply_transformations(df, schema_dict)
+        res_df = apply_transformations(df, schema_dict)
         self.assertEqual(res_df.loc[0, "status"], "Active")
         self.assertEqual(res_df.loc[1, "status"], "Inactive")
 
@@ -157,7 +176,7 @@ class TestDataBridge(unittest.TestCase):
         df = pd.DataFrame([
             {"id": 1, "name": "Иван", "email": "ivan@mail.ru", "birth_date": "1999-01-15"}
         ])
-        mapped_df = FileConverter.apply_column_mappings(df, self.schema)
+        mapped_df = apply_column_mappings(df, self.schema)
         self.assertIn("full_name", mapped_df.columns)
         self.assertIn("dob", mapped_df.columns)
         self.assertNotIn("name", mapped_df.columns)
@@ -177,8 +196,8 @@ class TestDataBridge(unittest.TestCase):
             ])
             df.to_csv(in_file, index=False)
 
-            saved_out, saved_err, val_res = FileConverter.convert_pipeline(
-                file=File(in_file),
+            saved_out, saved_err, val_res = ConversionPipeline.convert_pipeline(
+                file=in_file,
                 target_format="json",
                 schema_path=schema_file,
                 output_path=out_file,
@@ -213,7 +232,7 @@ class TestDataBridge(unittest.TestCase):
                     "message": 'поле "age" вне диапазона',
                 }],
             )
-            val_res.generate_html_report(report_path)
+            HTMLReporter.generate(val_res, report_path)
             self.assertTrue(report_path.exists())
             html_content = report_path.read_text(encoding="utf-8")
             self.assertIn("Отчёт валидации данных", html_content)
@@ -229,6 +248,80 @@ class TestDataBridge(unittest.TestCase):
         self.assertIn("Строк (Rows):        2", stats_text)
         self.assertIn("Колонок (Columns):   2", stats_text)
         self.assertIn("1.0 KB", stats_text)
+
+    def test_reader_factory(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            csv_f = tmp_path / "test.csv"
+            csv_f.write_text("a,b\n1,2", encoding="utf-8")
+            df = ReaderFactory.read(csv_f)
+            self.assertEqual(len(df), 1)
+            self.assertEqual(list(df.columns), ["a", "b"])
+
+    def test_schema_loader_yaml(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            yaml_f = tmp_path / "schema.yaml"
+            yaml_f.write_text("fields:\n  - name: test_col\n    type: integer\n", encoding="utf-8")
+            loaded = load_schema(yaml_f)
+            self.assertIn("fields", loaded)
+            self.assertEqual(loaded["fields"][0]["name"], "test_col")
+
+    def test_validator_boolean_type(self):
+        schema = {"fields": [{"name": "is_active", "type": "boolean"}]}
+        df = pd.DataFrame([{"is_active": True}, {"is_active": "false"}, {"is_active": "invalid_val"}])
+        res = ValidationEngine.validate(df, schema)
+        self.assertFalse(res.is_valid)
+        self.assertEqual(res.valid_count, 2)
+        self.assertIn(2, res.invalid_indices)
+
+    def test_validator_float_type(self):
+        schema = {"fields": [{"name": "score", "type": "float"}]}
+        df = pd.DataFrame([{"score": "3.14"}, {"score": "2,5"}, {"score": "abc"}])
+        res = ValidationEngine.validate(df, schema)
+        self.assertFalse(res.is_valid)
+        self.assertEqual(res.valid_count, 2)
+        self.assertIn(2, res.invalid_indices)
+
+    def test_validator_date_range(self):
+        schema = {
+            "fields": [
+                {
+                    "name": "bdate",
+                    "type": "date",
+                    "format": "YYYY-MM-DD",
+                    "min": "2000-01-01",
+                    "max": "2020-12-31",
+                }
+            ]
+        }
+        df = pd.DataFrame([
+            {"bdate": "2010-05-15"},
+            {"bdate": "1990-01-01"},
+            {"bdate": "2025-01-01"},
+        ])
+        res = ValidationEngine.validate(df, schema)
+        self.assertFalse(res.is_valid)
+        self.assertEqual(res.valid_count, 1)
+        self.assertEqual(len(res.invalid_indices), 2)
+
+    def test_cli_parser_commands(self):
+        parser = build_parser()
+        args = parser.parse_args(["convert", "input.csv", "--to", "json", "--config", "schema.yaml", "--output", "out.json"])
+        self.assertEqual(args.command, "convert")
+        self.assertEqual(args.file, "input.csv")
+        self.assertEqual(args.to, "json")
+        self.assertEqual(args.config, "schema.yaml")
+        self.assertEqual(args.output, "out.json")
+
+        args_val = parser.parse_args(["validate", "input.json", "--config", "schema.yaml", "--report", "rep.html"])
+        self.assertEqual(args_val.command, "validate")
+        self.assertEqual(args_val.file, "input.json")
+        self.assertEqual(args_val.report, "rep.html")
+
+        args_st = parser.parse_args(["stats", "input.csv"])
+        self.assertEqual(args_st.command, "stats")
+        self.assertEqual(args_st.file, "input.csv")
 
 
 if __name__ == "__main__":
